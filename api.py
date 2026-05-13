@@ -112,7 +112,7 @@ async def get_stats(
     return stats
 
 
-@app.post("/seed")
+@app.get("/seed")
 async def seed_trades(count: int = Query(default=120, ge=1, le=1000)):
     n = seed_to_sqlite(DB_PATH, count)
     return {"inserted": n, "message": f"{n} synthetic trades inserted"}
