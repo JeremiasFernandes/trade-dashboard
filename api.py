@@ -1,23 +1,29 @@
 """
-Trade Analytics API — FastAPI service
-======================================
+Trade Analytics API — FastAPI + Dash Dashboard
+================================================
 
-Servico independente para registro e consulta de trades.
+Servico independente para registro, consulta e visualizacao de trades.
 Executar: uvicorn api:app --host 0.0.0.0 --port 8100
+Dashboard: http://localhost:8100/dashboard/
 """
 
+import os
 from typing import Optional
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query
+from starlette.middleware.wsgi import WSGIMiddleware
 
 from models import (
     TradeEntryPayload, TradeExitPayload,
     TradeEntryResponse, TradeExitResponse,
 )
 from database import AnalyticsDatabase
+from dashboard.app import create_dash_app
+from seed_data import seed_to_sqlite
 
-db = AnalyticsDatabase()
+DB_PATH = os.environ.get("DB_PATH", "analytics.db")
+db = AnalyticsDatabase(db_path=DB_PATH)
 
 
 @asynccontextmanager
@@ -32,6 +38,20 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# Mount Dash dashboard
+dash_app = create_dash_app()
+app.mount("/dashboard", WSGIMiddleware(dash_app.server))
+
+
+@app.get("/")
+async def root():
+    return {
+        "service": "Trade Analytics API",
+        "dashboard": "/dashboard/",
+        "api_docs": "/docs",
+        "health": "/health",
+    }
 
 
 @app.post("/trades/entry", response_model=TradeEntryResponse)
@@ -90,6 +110,12 @@ async def get_stats(
 ):
     stats = await db.get_stats(strategy_type=strategy_type, hours=hours)
     return stats
+
+
+@app.post("/seed")
+async def seed_trades(count: int = Query(default=120, ge=1, le=1000)):
+    n = seed_to_sqlite(DB_PATH, count)
+    return {"inserted": n, "message": f"{n} synthetic trades inserted"}
 
 
 @app.get("/health")
