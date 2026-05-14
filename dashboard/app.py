@@ -8,7 +8,7 @@ import dash_bootstrap_components as dbc
 
 from dashboard import theme  # noqa: F401 — registra template plotly
 from dashboard.data import load_closed_trades
-from dashboard.tabs import overview, trades, mfe_mae, strategy, regime, timing
+from dashboard.tabs import overview, trades, mfe_mae, strategy, regime, timing, microstructure
 from dashboard.theme import COLORS
 
 
@@ -31,6 +31,7 @@ def create_dash_app() -> dash.Dash:
         {"id": "mfe_mae", "label": "MFE / MAE"},
         {"id": "strategy", "label": "Strategy"},
         {"id": "regime", "label": "Regime"},
+        {"id": "microstructure", "label": "Microstructure"},
         {"id": "timing", "label": "Timing"},
     ]
 
@@ -156,6 +157,7 @@ def create_dash_app() -> dash.Dash:
             "mfe_mae": mfe_mae.layout,
             "strategy": strategy.layout,
             "regime": regime.layout,
+            "microstructure": microstructure.layout,
             "timing": timing.layout,
         }
 

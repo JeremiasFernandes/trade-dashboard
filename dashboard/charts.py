@@ -526,6 +526,112 @@ def slippage_distribution(df: pd.DataFrame) -> go.Figure:
     return fig
 
 
+# === MICROSTRUCTURE ===
+
+def microstructure_scatter(df: pd.DataFrame, x_col: str, x_label: str) -> go.Figure:
+    """Scatter plot of a microstructure metric at entry vs PnL."""
+    if df.empty or x_col not in df:
+        return _empty_fig(f"No {x_label} data")
+
+    vals = df[df[x_col] != 0]
+    if vals.empty:
+        return _empty_fig(f"No {x_label} data")
+
+    fig = go.Figure()
+    for label, color in [("Winner", COLORS["green"]), ("Loser", COLORS["red"])]:
+        sub = vals[vals["result_label"] == label]
+        if sub.empty:
+            continue
+        fig.add_trace(go.Scatter(
+            x=sub[x_col], y=sub["net_pnl"],
+            mode="markers", name=label,
+            marker=dict(color=color, size=7, opacity=0.6),
+            hovertemplate=f"{x_label}: %{{x:.4f}}<br>PnL: %{{y:.4f}}<extra></extra>",
+        ))
+
+    fig.add_hline(y=0, line_color=COLORS["text_muted"], line_width=1)
+    fig.update_layout(
+        title=f"{x_label} at Entry vs PnL",
+        xaxis_title=x_label, yaxis_title="Net PnL", height=350,
+    )
+    return fig
+
+
+def cvd_divergence_winrate(df: pd.DataFrame) -> go.Figure:
+    """Bar chart: win rate with/without CVD divergence."""
+    if df.empty or "cvd_divergence" not in df:
+        return _empty_fig("No CVD divergence data")
+
+    df = df.copy()
+    df["has_divergence"] = df["cvd_divergence"].apply(
+        lambda x: "With Divergence" if x and x != "" else "No Divergence"
+    )
+
+    grouped = df.groupby("has_divergence").agg(
+        win_rate=("is_winner", lambda x: x.mean() * 100),
+        count=("net_pnl", "count"),
+        avg_pnl=("net_pnl", "mean"),
+    ).reset_index()
+
+    if grouped.empty:
+        return _empty_fig("No divergence data")
+
+    colors = [COLORS["cyan"], COLORS["blue"]]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=grouped["has_divergence"],
+        y=grouped["win_rate"],
+        marker_color=colors[:len(grouped)],
+        text=[f"n={c}<br>avg={p:.4f}" for c, p in zip(grouped["count"], grouped["avg_pnl"])],
+        textposition="outside",
+    ))
+    fig.add_hline(y=50, line_dash="dash", line_color=COLORS["text_muted"])
+    fig.update_layout(
+        title="Win Rate: CVD Divergence vs No Divergence",
+        xaxis_title="", yaxis_title="Win Rate %", height=350,
+        yaxis=dict(range=[0, 100]),
+    )
+    return fig
+
+
+def delta_exhaustion_impact(df: pd.DataFrame) -> go.Figure:
+    """Bar chart: avg PnL with/without delta exhaustion at exit."""
+    if df.empty or "delta_exhaustion_at_exit" not in df:
+        return _empty_fig("No delta exhaustion data")
+
+    df = df.copy()
+    df["exhaustion_label"] = df["delta_exhaustion_at_exit"].apply(
+        lambda x: "With Exhaustion" if x else "No Exhaustion"
+    )
+
+    grouped = df.groupby("exhaustion_label").agg(
+        avg_pnl=("net_pnl", "mean"),
+        count=("net_pnl", "count"),
+        win_rate=("is_winner", lambda x: x.mean() * 100),
+    ).reset_index()
+
+    if grouped.empty:
+        return _empty_fig("No exhaustion data")
+
+    colors = [COLORS["orange"], COLORS["blue"]]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(
+        x=grouped["exhaustion_label"],
+        y=grouped["avg_pnl"],
+        marker_color=colors[:len(grouped)],
+        text=[f"n={c}<br>WR={wr:.0f}%" for c, wr in zip(grouped["count"], grouped["win_rate"])],
+        textposition="outside",
+    ))
+    fig.add_hline(y=0, line_color=COLORS["text_muted"])
+    fig.update_layout(
+        title="Avg PnL: Delta Exhaustion Impact on Exit",
+        xaxis_title="", yaxis_title="Avg Net PnL", height=350,
+    )
+    return fig
+
+
 def funding_vs_pnl(df: pd.DataFrame) -> go.Figure:
     if df.empty:
         return _empty_fig()

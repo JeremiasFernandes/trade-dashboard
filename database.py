@@ -51,6 +51,13 @@ CREATE TABLE IF NOT EXISTS trades (
     -- Pyramid
     fib_step INTEGER DEFAULT 1,
 
+    -- Microstructure at entry
+    ofi_at_entry REAL DEFAULT 0,
+    cvd_at_entry REAL DEFAULT 0,
+    candle_delta_at_entry REAL DEFAULT 0,
+    vpin_at_entry REAL DEFAULT 0,
+    cvd_divergence TEXT DEFAULT '',
+
     entry_time TEXT,
 
     -- Exit fields (nullable)
@@ -76,6 +83,13 @@ CREATE TABLE IF NOT EXISTS trades (
     funding_rate_at_exit REAL,
     btc_price_at_exit REAL,
     btc_return_during_trade REAL,
+
+    -- Microstructure at exit
+    ofi_at_exit REAL DEFAULT 0,
+    cvd_at_exit REAL DEFAULT 0,
+    vpin_at_exit REAL DEFAULT 0,
+    delta_exhaustion_at_exit INTEGER DEFAULT 0,
+
     exit_time TEXT
 );
 """
@@ -88,6 +102,19 @@ CREATE INDEX IF NOT EXISTS idx_trades_exit_reason ON trades(exit_reason);
 """
 
 
+MIGRATIONS = [
+    "ALTER TABLE trades ADD COLUMN ofi_at_entry REAL DEFAULT 0",
+    "ALTER TABLE trades ADD COLUMN cvd_at_entry REAL DEFAULT 0",
+    "ALTER TABLE trades ADD COLUMN candle_delta_at_entry REAL DEFAULT 0",
+    "ALTER TABLE trades ADD COLUMN vpin_at_entry REAL DEFAULT 0",
+    "ALTER TABLE trades ADD COLUMN cvd_divergence TEXT DEFAULT ''",
+    "ALTER TABLE trades ADD COLUMN ofi_at_exit REAL DEFAULT 0",
+    "ALTER TABLE trades ADD COLUMN cvd_at_exit REAL DEFAULT 0",
+    "ALTER TABLE trades ADD COLUMN vpin_at_exit REAL DEFAULT 0",
+    "ALTER TABLE trades ADD COLUMN delta_exhaustion_at_exit INTEGER DEFAULT 0",
+]
+
+
 class AnalyticsDatabase:
     def __init__(self, db_path: str = "analytics.db"):
         self.db_path = db_path
@@ -98,7 +125,16 @@ class AnalyticsDatabase:
         self._db.row_factory = aiosqlite.Row
         await self._db.executescript(CREATE_TABLE)
         await self._db.executescript(CREATE_INDEXES)
+        await self._run_migrations()
         await self._db.commit()
+
+    async def _run_migrations(self):
+        """Apply schema migrations for existing databases (idempotent)."""
+        for sql in MIGRATIONS:
+            try:
+                await self._db.execute(sql)
+            except Exception:
+                pass  # Column already exists
 
     async def close(self):
         if self._db:
@@ -118,7 +154,9 @@ class AnalyticsDatabase:
                 sl_price, sl_pct, tp_price,
                 z_score, drift, hurst, volatility, confidence_factor, risk_mult,
                 funding_rate, open_interest, btc_price,
-                drift_sign_age, hurst_delta, fib_step, entry_time
+                drift_sign_age, hurst_delta, fib_step,
+                ofi_at_entry, cvd_at_entry, candle_delta_at_entry, vpin_at_entry, cvd_divergence,
+                entry_time
             ) VALUES (
                 ?, ?, ?, ?, ?,
                 ?, ?, ?, ?,
@@ -126,7 +164,9 @@ class AnalyticsDatabase:
                 ?, ?, ?,
                 ?, ?, ?, ?, ?, ?,
                 ?, ?, ?,
-                ?, ?, ?, ?
+                ?, ?, ?,
+                ?, ?, ?, ?, ?,
+                ?
             )""",
             (
                 trade_id, data["symbol"], data["direction"], data["strategy_type"], data.get("mode", "live"),
@@ -137,6 +177,9 @@ class AnalyticsDatabase:
                 data.get("volatility", 0), data.get("confidence_factor", 1), data.get("risk_mult", 1),
                 data.get("funding_rate", 0), data.get("open_interest", 0), data.get("btc_price", 0),
                 data.get("drift_sign_age", 0), data.get("hurst_delta", 0), data.get("fib_step", 1),
+                data.get("ofi_at_entry", 0), data.get("cvd_at_entry", 0),
+                data.get("candle_delta_at_entry", 0), data.get("vpin_at_entry", 0),
+                data.get("cvd_divergence", ""),
                 entry_time,
             )
         )
@@ -158,7 +201,10 @@ class AnalyticsDatabase:
                 z_score_at_exit = ?, drift_at_exit = ?,
                 hurst_at_exit = ?, volatility_at_exit = ?,
                 funding_rate_at_exit = ?, btc_price_at_exit = ?,
-                btc_return_during_trade = ?, exit_time = ?
+                btc_return_during_trade = ?,
+                ofi_at_exit = ?, cvd_at_exit = ?,
+                vpin_at_exit = ?, delta_exhaustion_at_exit = ?,
+                exit_time = ?
             WHERE trade_id = ?""",
             (
                 data["exit_price"], data["exit_reason"],
@@ -172,7 +218,11 @@ class AnalyticsDatabase:
                 data.get("z_score_at_exit", 0), data.get("drift_at_exit", 0),
                 data.get("hurst_at_exit", 0), data.get("volatility_at_exit", 0),
                 data.get("funding_rate_at_exit", 0), data.get("btc_price_at_exit", 0),
-                data.get("btc_return_during_trade", 0), exit_time,
+                data.get("btc_return_during_trade", 0),
+                data.get("ofi_at_exit", 0), data.get("cvd_at_exit", 0),
+                data.get("vpin_at_exit", 0),
+                1 if data.get("delta_exhaustion_at_exit") else 0,
+                exit_time,
                 trade_id,
             )
         )

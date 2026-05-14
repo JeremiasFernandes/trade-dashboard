@@ -49,6 +49,13 @@ class TradeEntryPayload(BaseModel):
     # Pyramid
     fib_step: int = 1
 
+    # Microstructure at entry
+    ofi_at_entry: float = 0.0
+    cvd_at_entry: float = 0.0
+    candle_delta_at_entry: float = 0.0
+    vpin_at_entry: float = 0.0
+    cvd_divergence: str = ""
+
     entry_time: Optional[datetime] = None
 
 
@@ -89,6 +96,12 @@ class TradeExitPayload(BaseModel):
     funding_rate_at_exit: float = 0.0
     btc_price_at_exit: float = 0.0
     btc_return_during_trade: float = 0.0
+
+    # Microstructure at exit
+    ofi_at_exit: float = 0.0
+    cvd_at_exit: float = 0.0
+    vpin_at_exit: float = 0.0
+    delta_exhaustion_at_exit: bool = False
 
     exit_time: Optional[datetime] = None
 
