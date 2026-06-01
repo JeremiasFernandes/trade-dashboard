@@ -8,10 +8,13 @@ Dashboard: http://localhost:8100/dashboard/
 """
 
 import os
+import csv
+import io
 from typing import Optional
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from starlette.middleware.wsgi import WSGIMiddleware
 
 from models import (
@@ -95,12 +98,43 @@ async def list_trades(
     return {"trades": trades, "count": len(trades)}
 
 
-@app.get("/trades/{trade_id}")
-async def get_trade(trade_id: str):
-    trade = await db.get_trade(trade_id)
-    if not trade:
-        raise HTTPException(status_code=404, detail=f"Trade {trade_id} not found")
-    return trade
+@app.get("/trades/export/csv")
+async def export_csv(
+    symbol: Optional[str] = None,
+    strategy_type: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    closed_only: bool = True,
+):
+    trades = await db.get_trades(
+        symbol=symbol,
+        strategy_type=strategy_type,
+        start_date=start_date,
+        end_date=end_date,
+        closed_only=closed_only,
+        limit=100_000,
+        offset=0,
+    )
+
+    if not trades:
+        return StreamingResponse(
+            iter(["no trades found"]),
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=trades.csv"},
+        )
+
+    output = io.StringIO()
+    fieldnames = list(trades[0].keys())
+    writer = csv.DictWriter(output, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(trades)
+    output.seek(0)
+
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=trades.csv"},
+    )
 
 
 @app.get("/trades/stats/summary")
@@ -110,6 +144,14 @@ async def get_stats(
 ):
     stats = await db.get_stats(strategy_type=strategy_type, hours=hours)
     return stats
+
+
+@app.get("/trades/{trade_id}")
+async def get_trade(trade_id: str):
+    trade = await db.get_trade(trade_id)
+    if not trade:
+        raise HTTPException(status_code=404, detail=f"Trade {trade_id} not found")
+    return trade
 
 
 @app.get("/seed")
